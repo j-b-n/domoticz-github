@@ -122,13 +122,13 @@ class BasePlugin:
         self.ensure_unit(DEVICE_PUBLIC_REPOS, "Public GitHub Repos", "Custom", "repos")
         self.ensure_unit(DEVICE_COPILOT_REQUESTS, "Copilot Requests", "Custom", "req")
         self.ensure_unit(DEVICE_COPILOT_BILLABLE, "Copilot Billable Requests", "Custom", "req")
-        self.ensure_unit(DEVICE_COPILOT_USED_PERCENT, "Copilot Used Quota", "Custom", "%")
+        self.ensure_unit(DEVICE_COPILOT_USED_PERCENT, "Copilot Used Quota", "Custom", "%", subtype=6)
         self.ensure_unit(DEVICE_COPILOT_REMAINING, "Copilot Remaining Quota", "Custom", "req")
         self.ensure_unit(DEVICE_COPILOT_NET_AMOUNT, "Copilot Net Amount", "Custom", "$")
         # Language Summary uses Text type
         self.ensure_unit(DEVICE_LANGUAGE_SUMMARY, "Language Summary", "Text")
 
-    def ensure_unit(self, unit: int, name: str, unit_type: str, unit_label: str | None = None) -> None:
+    def ensure_unit(self, unit: int, name: str, unit_type: str, unit_label: str | None = None, subtype: int | None = None) -> None:
         """Ensure a unit exists within the parent device."""
         if DEVICE_ID in Devices and unit in Devices[DEVICE_ID].Units:
             return
@@ -147,13 +147,15 @@ class BasePlugin:
                     Used=1,
                 ).Create()
             else:  # Custom sensor
+                # Use provided subtype or default to 31
+                actual_subtype = subtype if subtype is not None else 31
                 options = {"Custom": f"1;{unit_label}"} if unit_label else {"Custom": "1;"}
                 Domoticz.Unit(
                     Name=name,
                     Unit=unit,
                     DeviceID=DEVICE_ID,
                     Type=243,
-                    Subtype=31,
+                    Subtype=actual_subtype,
                     Options=options,
                     Image=icon_id,
                     Used=1,
