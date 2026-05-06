@@ -45,10 +45,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 import os
 import os.path
+import re
 
 import DomoticzEx as Domoticz
 
-from shared.github_stats_shared import GitHubStatsError, PersonalStatsSnapshot, collect_personal_stats
+from shared.github_stats_shared import (
+    GitHubStatsError,
+    PersonalStatsSnapshot,
+    collect_personal_stats,
+    fetch_user,
+    load_pat,
+)
 
 HEARTBEAT_SECONDS = 30
 DEFAULT_POLL_MINUTES = 5
@@ -95,11 +102,27 @@ class BasePlugin:
         if not env_path.exists():
             Domoticz.Log(f"Using .env path: {env_path}")
             Domoticz.Error(f".env file NOT found at {env_path}")
+        else:
+            self.validate_pat_on_startup(env_path)
         
         Domoticz.Heartbeat(HEARTBEAT_SECONDS)
         self.ensure_devices()
         self.restore_cached_state()
         self.refresh_stats("startup")
+
+    def validate_pat_on_startup(self, env_path: Path) -> None:
+        """Run a lightweight auth check early so PAT problems are obvious in logs."""
+        try:
+            pat = load_pat(env_path)
+            user = fetch_user(pat)
+            login = str(user.get("login") or "(unknown)")
+            Domoticz.Log(f"PAT startup check passed for GitHub user: {login}")
+        except GitHubStatsError as error:
+            message = self.truncate_text(str(error))
+            safe_message = self.sanitize_error_for_config(f"Startup PAT check failed: {message}")
+            self.update_cached_state(error=safe_message)
+            Domoticz.Error("Startup PAT check failed. Verify GITHUB_PAT, token expiration, and permissions.")
+            Domoticz.Error(message)
 
     def onHeartbeat(self) -> None:
         self.heartbeat_count += 1
@@ -172,8 +195,15 @@ class BasePlugin:
             snapshot = collect_personal_stats(env_path)
         except GitHubStatsError as error:
             message = self.truncate_text(f"Error during {reason} sync: {error}")
-            self.update_cached_state(error=message)
-            Domoticz.Error(str(error))
+            safe_message = self.sanitize_error_for_config(message)
+            self.update_cached_state(error=safe_message)
+
+            error_text = str(error)
+            if "401" in error_text or "Requires authentication" in error_text:
+                Domoticz.Error(
+                    "GitHub authentication failed (401). Check GITHUB_PAT in .env, token expiration, and required permissions."
+                )
+            Domoticz.Error(error_text)
             return
 
         self.apply_snapshot(snapshot)
@@ -330,7 +360,7 @@ class BasePlugin:
             }
             for unit in Devices[DEVICE_ID].Units
         }
-        configuration["last_error"] = error.replace('"', "'")
+        configuration["last_error"] = self.sanitize_error_for_config(error)
         Domoticz.Configuration(configuration)
 
     def truncate_text(self, value: str, limit: int = 255) -> str:
@@ -345,6 +375,14 @@ class BasePlugin:
         if float(value).is_integer():
             return str(int(value))
         return f"{value:.1f}"
+
+    def sanitize_error_for_config(self, value: str) -> str:
+        # Keep configuration values JSON-safe for Domoticz's parser.
+        sanitized = " ".join(value.split())
+        sanitized = sanitized.replace('"', "'")
+        sanitized = sanitized.replace("\\", "/")
+        sanitized = re.sub(r"[\x00-\x1F\x7F]", " ", sanitized)
+        return self.truncate_text(sanitized)
 
 
 _plugin = BasePlugin()
