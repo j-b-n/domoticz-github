@@ -299,7 +299,7 @@ class BasePlugin:
         if DEVICE_ID not in Devices:
             return
         
-        configuration = Domoticz.Configuration()
+        configuration = Domoticz.Configuration() or {}
         cached_state = configuration.get("device_state")
         if isinstance(cached_state, dict):
             for raw_unit, values in cached_state.items():
@@ -322,7 +322,7 @@ class BasePlugin:
         if DEVICE_ID not in Devices:
             return
         
-        configuration = Domoticz.Configuration()
+        configuration = Domoticz.Configuration() or {}
         configuration["device_state"] = {
             str(unit): {
                 "nValue": int(Devices[DEVICE_ID].Units[unit].nValue),
@@ -330,7 +330,7 @@ class BasePlugin:
             }
             for unit in Devices[DEVICE_ID].Units
         }
-        configuration["last_error"] = error
+        configuration["last_error"] = error.replace('"', "'")
         Domoticz.Configuration(configuration)
 
     def truncate_text(self, value: str, limit: int = 255) -> str:
